@@ -42,14 +42,12 @@ var tomlScalarTypes = map[string]bool{
 // change may introduce a new divergence, and a listed case that starts passing is
 // reported so the entry can be removed. Baseline captured 2026-08-03 against TOML
 // v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps. Closing the
-// control-character/invalid-UTF-8 lexing gap (26) and the multi-line literal
-// trailing-quote gap (3) takes the suite to 687/709 (96.90%).
+// control-character/invalid-UTF-8 lexing gap (26), the multi-line literal
+// trailing-quote gap (3), and the calendar/offset validation gap (8) takes the
+// suite to 695/709 (98.03%).
 //
-// The remaining 20 shrinkable gaps break down as (all genuine parser behaviour):
-//   - Calendar/offset validation (7): Feb 29/30 on non-leap dates and out-of-
-//     range time-zone offsets are accepted (invalid/{datetime,local-date,
-//     local-datetime}/feb-*, invalid/datetime/offset-overflow-*).
-//   - Table/array redefinition rules (7): a few reopen/extend-after-dotted and
+// The remaining 12 shrinkable gaps break down as (all genuine parser behaviour):
+//   - Table/array redefinition rules (6): a few reopen/extend-after-dotted and
 //     append-to-defined cases are not rejected (invalid/table/append-with-dotted-
 //     keys-0{1,2,8}, invalid/array/{extending-table,tables-01}, invalid/inline-
 //     table/overwrite-02).
@@ -62,20 +60,12 @@ var tomlScalarTypes = map[string]bool{
 var tomlTestKnownFailing = map[string]bool{
 	"invalid/array/extending-table.toml":            true,
 	"invalid/array/tables-01.toml":                  true,
-	"invalid/datetime/feb-29.toml":                  true,
-	"invalid/datetime/feb-30.toml":                  true,
-	"invalid/datetime/offset-overflow-hour.toml":    true,
-	"invalid/datetime/offset-overflow-minute.toml":  true,
 	"invalid/float/exp-dot-02.toml":                 true,
 	"invalid/float/exp-dot-03.toml":                 true,
 	"invalid/inline-table/overwrite-02.toml":        true,
 	"invalid/integer/double-sign-nex.toml":          true,
 	"invalid/integer/double-sign-plus.toml":         true,
 	"invalid/integer/invalid-hex-03.toml":           true,
-	"invalid/local-date/feb-29.toml":                true,
-	"invalid/local-date/feb-30.toml":                true,
-	"invalid/local-datetime/feb-29.toml":            true,
-	"invalid/local-datetime/feb-30.toml":            true,
 	"invalid/table/append-with-dotted-keys-01.toml": true,
 	"invalid/table/append-with-dotted-keys-02.toml": true,
 	"invalid/table/append-with-dotted-keys-08.toml": true,
