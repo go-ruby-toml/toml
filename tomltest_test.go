@@ -43,14 +43,10 @@ var tomlScalarTypes = map[string]bool{
 // reported so the entry can be removed. Baseline captured 2026-08-03 against TOML
 // v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps. Closing the
 // control-character/invalid-UTF-8 lexing gap (26), the multi-line literal
-// trailing-quote gap (3), and the calendar/offset validation gap (8) takes the
-// suite to 695/709 (98.03%).
+// trailing-quote gap (3), the calendar/offset validation gap (8), and the
+// table/array redefinition gap (6) takes the suite to 701/709 (98.87%).
 //
-// The remaining 12 shrinkable gaps break down as (all genuine parser behaviour):
-//   - Table/array redefinition rules (6): a few reopen/extend-after-dotted and
-//     append-to-defined cases are not rejected (invalid/table/append-with-dotted-
-//     keys-0{1,2,8}, invalid/array/{extending-table,tables-01}, invalid/inline-
-//     table/overwrite-02).
+// The remaining 6 shrinkable gaps break down as (all genuine parser behaviour):
 //   - Numeric/float lexing (5): double sign, a bad hex digit and `exp-dot`
 //     malformations are accepted (invalid/integer/*, invalid/float/exp-dot-0{2,3}).
 //   - Valid input wrongly rejected (1): int64 min/max boundary literals
@@ -58,18 +54,12 @@ var tomlScalarTypes = map[string]bool{
 //
 // Each is a dedicated gap-closing target; the set may only shrink.
 var tomlTestKnownFailing = map[string]bool{
-	"invalid/array/extending-table.toml":            true,
-	"invalid/array/tables-01.toml":                  true,
-	"invalid/float/exp-dot-02.toml":                 true,
-	"invalid/float/exp-dot-03.toml":                 true,
-	"invalid/inline-table/overwrite-02.toml":        true,
-	"invalid/integer/double-sign-nex.toml":          true,
-	"invalid/integer/double-sign-plus.toml":         true,
-	"invalid/integer/invalid-hex-03.toml":           true,
-	"invalid/table/append-with-dotted-keys-01.toml": true,
-	"invalid/table/append-with-dotted-keys-02.toml": true,
-	"invalid/table/append-with-dotted-keys-08.toml": true,
-	"valid/integer/long.toml":                       true,
+	"invalid/float/exp-dot-02.toml":         true,
+	"invalid/float/exp-dot-03.toml":         true,
+	"invalid/integer/double-sign-nex.toml":  true,
+	"invalid/integer/double-sign-plus.toml": true,
+	"invalid/integer/invalid-hex-03.toml":   true,
+	"valid/integer/long.toml":               true,
 }
 
 // tomlKnownDivergences records the toml-test cases this package intentionally
