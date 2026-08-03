@@ -36,16 +36,16 @@ var tomlScalarTypes = map[string]bool{
 // tomlTestKnownFailing is the frozen set of toml-test cases (keyed by the input's
 // manifest path, e.g. "valid/array/array.toml") this package does not yet handle
 // to the spec's verdict. It is a shrink-only conformance RATCHET: every case NOT
-// listed here must produce the required result — a valid case must parse and
-// match its tagged-JSON expectation byte/semantics-exact, an invalid case must be
-// rejected — so no change may introduce a new divergence, and a listed case that
-// starts passing is reported so the entry can be removed. Baseline captured
-// 2026-08-03 against TOML v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%),
-// 51 gaps. The control-character and invalid-UTF-8 lexing gap (26 cases) is now
-// closed, taking the suite to 684/709 (96.47%).
+// listed here (and not a documented divergence, see tomlKnownDivergences) must
+// produce the required result — a valid case must parse and match its tagged-JSON
+// expectation byte/semantics-exact, an invalid case must be rejected — so no
+// change may introduce a new divergence, and a listed case that starts passing is
+// reported so the entry can be removed. Baseline captured 2026-08-03 against TOML
+// v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps. Closing the
+// control-character/invalid-UTF-8 lexing gap (26) and the multi-line literal
+// trailing-quote gap (3) takes the suite to 687/709 (96.90%).
 //
-// The remaining 25 gaps break down as (all genuine parser behaviour, not test
-// artefacts):
+// The remaining 20 shrinkable gaps break down as (all genuine parser behaviour):
 //   - Calendar/offset validation (7): Feb 29/30 on non-leap dates and out-of-
 //     range time-zone offsets are accepted (invalid/{datetime,local-date,
 //     local-datetime}/feb-*, invalid/datetime/offset-overflow-*).
@@ -55,14 +55,8 @@ var tomlScalarTypes = map[string]bool{
 //     table/overwrite-02).
 //   - Numeric/float lexing (5): double sign, a bad hex digit and `exp-dot`
 //     malformations are accepted (invalid/integer/*, invalid/float/exp-dot-0{2,3}).
-//   - Basic-string byte escape + multiline quote runs (2 invalid): the toml-rb
-//     `\x` byte escape is accepted though TOML v1.0.0 forbids it, and a run of six
-//     quotes adjacent to a multi-line delimiter is accepted (invalid/string/
-//     basic-byte-escapes, invalid/string/multiline-quotes-01).
-//   - Valid inputs wrongly rejected (4): int64 min/max boundary literals
-//     (valid/integer/long) and three multiline-string cases whose content ends in
-//     one or two quote characters adjacent to the closing delimiter
-//     (valid/string/{multiline-quotes,raw-multiline}, valid/spec-1.0.0/string-7).
+//   - Valid input wrongly rejected (1): int64 min/max boundary literals
+//     (valid/integer/long).
 //
 // Each is a dedicated gap-closing target; the set may only shrink.
 var tomlTestKnownFailing = map[string]bool{
@@ -82,15 +76,32 @@ var tomlTestKnownFailing = map[string]bool{
 	"invalid/local-date/feb-30.toml":                true,
 	"invalid/local-datetime/feb-29.toml":            true,
 	"invalid/local-datetime/feb-30.toml":            true,
-	"invalid/string/basic-byte-escapes.toml":        true,
-	"invalid/string/multiline-quotes-01.toml":       true,
 	"invalid/table/append-with-dotted-keys-01.toml": true,
 	"invalid/table/append-with-dotted-keys-02.toml": true,
 	"invalid/table/append-with-dotted-keys-08.toml": true,
 	"valid/integer/long.toml":                       true,
-	"valid/spec-1.0.0/string-7.toml":                true,
-	"valid/string/multiline-quotes.toml":            true,
-	"valid/string/raw-multiline.toml":               true,
+}
+
+// tomlKnownDivergences records the toml-test cases this package intentionally
+// does NOT resolve to toml-test's strict TOML v1.0.0 verdict because it follows
+// toml-rb (the reference this go-ruby- port mirrors) instead. They are permanent,
+// documented exceptions — excluded from the ratchet in both directions — not gaps
+// to close:
+//
+//   - invalid/string/basic-byte-escapes: toml-rb accepts the `\xHH` byte escape
+//     (and `\e`) as an extension; TestStringEscapes pins that behaviour, so `\x33`
+//     is accepted where strict v1.0.0 rejects it.
+//   - invalid/string/multiline-quotes-01: for basic multi-line strings toml-rb
+//     consumes an arbitrarily long run of quotes adjacent to the delimiter as
+//     literal content (the run's final three are the delimiter), so a six-quote
+//     run yields three literal quotes rather than an error; TestMultilineBasic
+//     ("nine quotes") pins this. The multi-line LITERAL parser has no such pin and
+//     does apply the strict v1.0.0 rule (a run of six or more is rejected), so the
+//     literal analogues invalid/string/literal-multiline-quotes-0{1,2} are
+//     correctly rejected and stay outside this map.
+var tomlKnownDivergences = map[string]bool{
+	"invalid/string/basic-byte-escapes.toml":  true,
+	"invalid/string/multiline-quotes-01.toml": true,
 }
 
 // TestTomlTestConformance is the differential conformance gate against the
@@ -121,6 +132,10 @@ func TestTomlTestConformance(t *testing.T) {
 		total++
 		if ok {
 			pass++
+		}
+		if tomlKnownDivergences[key] {
+			// Intentional toml-rb divergence: excluded from the ratchet either way.
+			return
 		}
 		switch {
 		case ok && tomlTestKnownFailing[key]:
