@@ -40,16 +40,12 @@ var tomlScalarTypes = map[string]bool{
 // match its tagged-JSON expectation byte/semantics-exact, an invalid case must be
 // rejected — so no change may introduce a new divergence, and a listed case that
 // starts passing is reported so the entry can be removed. Baseline captured
-// 2026-08-03 against TOML v1.0.0 (files-toml-1.0.0): 658/709 cases pass
-// (92.81%), 51 gaps — the largest hidden gap in this ratchet batch.
+// 2026-08-03 against TOML v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%),
+// 51 gaps. The control-character and invalid-UTF-8 lexing gap (26 cases) is now
+// closed, taking the suite to 684/709 (96.47%).
 //
-// The 51 gaps break down as (all genuine parser behaviour, not test artefacts):
-//   - Lax string/comment lexing (26): raw control characters (NUL, US, DEL, bare
-//     CR/LF, backspace) and invalid UTF-8 are accepted inside basic/literal,
-//     single- and multi-line strings and comments instead of being rejected
-//     (invalid/control/*, invalid/encoding/*, invalid/string/basic-byte-escapes,
-//     invalid/string/multiline-quotes-01). This is the priority gap — it is a
-//     lax-parsing / input-validation issue.
+// The remaining 25 gaps break down as (all genuine parser behaviour, not test
+// artefacts):
 //   - Calendar/offset validation (7): Feb 29/30 on non-leap dates and out-of-
 //     range time-zone offsets are accepted (invalid/{datetime,local-date,
 //     local-datetime}/feb-*, invalid/datetime/offset-overflow-*).
@@ -59,6 +55,10 @@ var tomlScalarTypes = map[string]bool{
 //     table/overwrite-02).
 //   - Numeric/float lexing (5): double sign, a bad hex digit and `exp-dot`
 //     malformations are accepted (invalid/integer/*, invalid/float/exp-dot-0{2,3}).
+//   - Basic-string byte escape + multiline quote runs (2 invalid): the toml-rb
+//     `\x` byte escape is accepted though TOML v1.0.0 forbids it, and a run of six
+//     quotes adjacent to a multi-line delimiter is accepted (invalid/string/
+//     basic-byte-escapes, invalid/string/multiline-quotes-01).
 //   - Valid inputs wrongly rejected (4): int64 min/max boundary literals
 //     (valid/integer/long) and three multiline-string cases whose content ends in
 //     one or two quote characters adjacent to the closing delimiter
@@ -66,57 +66,31 @@ var tomlScalarTypes = map[string]bool{
 //
 // Each is a dedicated gap-closing target; the set may only shrink.
 var tomlTestKnownFailing = map[string]bool{
-	"invalid/array/extending-table.toml":                  true,
-	"invalid/array/tables-01.toml":                        true,
-	"invalid/control/comment-cr.toml":                     true,
-	"invalid/control/multi-del.toml":                      true,
-	"invalid/control/multi-lf.toml":                       true,
-	"invalid/control/multi-null.toml":                     true,
-	"invalid/control/multi-us.toml":                       true,
-	"invalid/control/rawmulti-del.toml":                   true,
-	"invalid/control/rawmulti-lf.toml":                    true,
-	"invalid/control/rawmulti-null.toml":                  true,
-	"invalid/control/rawmulti-us.toml":                    true,
-	"invalid/control/rawstring-cr.toml":                   true,
-	"invalid/control/rawstring-del.toml":                  true,
-	"invalid/control/rawstring-lf.toml":                   true,
-	"invalid/control/rawstring-null.toml":                 true,
-	"invalid/control/rawstring-us.toml":                   true,
-	"invalid/control/string-bs.toml":                      true,
-	"invalid/control/string-cr.toml":                      true,
-	"invalid/control/string-del.toml":                     true,
-	"invalid/control/string-lf.toml":                      true,
-	"invalid/control/string-null.toml":                    true,
-	"invalid/control/string-us.toml":                      true,
-	"invalid/datetime/feb-29.toml":                        true,
-	"invalid/datetime/feb-30.toml":                        true,
-	"invalid/datetime/offset-overflow-hour.toml":          true,
-	"invalid/datetime/offset-overflow-minute.toml":        true,
-	"invalid/encoding/bad-codepoint.toml":                 true,
-	"invalid/encoding/bad-utf8-in-comment.toml":           true,
-	"invalid/encoding/bad-utf8-in-multiline-literal.toml": true,
-	"invalid/encoding/bad-utf8-in-multiline.toml":         true,
-	"invalid/encoding/bad-utf8-in-string-literal.toml":    true,
-	"invalid/encoding/bad-utf8-in-string.toml":            true,
-	"invalid/float/exp-dot-02.toml":                       true,
-	"invalid/float/exp-dot-03.toml":                       true,
-	"invalid/inline-table/overwrite-02.toml":              true,
-	"invalid/integer/double-sign-nex.toml":                true,
-	"invalid/integer/double-sign-plus.toml":               true,
-	"invalid/integer/invalid-hex-03.toml":                 true,
-	"invalid/local-date/feb-29.toml":                      true,
-	"invalid/local-date/feb-30.toml":                      true,
-	"invalid/local-datetime/feb-29.toml":                  true,
-	"invalid/local-datetime/feb-30.toml":                  true,
-	"invalid/string/basic-byte-escapes.toml":              true,
-	"invalid/string/multiline-quotes-01.toml":             true,
-	"invalid/table/append-with-dotted-keys-01.toml":       true,
-	"invalid/table/append-with-dotted-keys-02.toml":       true,
-	"invalid/table/append-with-dotted-keys-08.toml":       true,
-	"valid/integer/long.toml":                             true,
-	"valid/spec-1.0.0/string-7.toml":                      true,
-	"valid/string/multiline-quotes.toml":                  true,
-	"valid/string/raw-multiline.toml":                     true,
+	"invalid/array/extending-table.toml":            true,
+	"invalid/array/tables-01.toml":                  true,
+	"invalid/datetime/feb-29.toml":                  true,
+	"invalid/datetime/feb-30.toml":                  true,
+	"invalid/datetime/offset-overflow-hour.toml":    true,
+	"invalid/datetime/offset-overflow-minute.toml":  true,
+	"invalid/float/exp-dot-02.toml":                 true,
+	"invalid/float/exp-dot-03.toml":                 true,
+	"invalid/inline-table/overwrite-02.toml":        true,
+	"invalid/integer/double-sign-nex.toml":          true,
+	"invalid/integer/double-sign-plus.toml":         true,
+	"invalid/integer/invalid-hex-03.toml":           true,
+	"invalid/local-date/feb-29.toml":                true,
+	"invalid/local-date/feb-30.toml":                true,
+	"invalid/local-datetime/feb-29.toml":            true,
+	"invalid/local-datetime/feb-30.toml":            true,
+	"invalid/string/basic-byte-escapes.toml":        true,
+	"invalid/string/multiline-quotes-01.toml":       true,
+	"invalid/table/append-with-dotted-keys-01.toml": true,
+	"invalid/table/append-with-dotted-keys-02.toml": true,
+	"invalid/table/append-with-dotted-keys-08.toml": true,
+	"valid/integer/long.toml":                       true,
+	"valid/spec-1.0.0/string-7.toml":                true,
+	"valid/string/multiline-quotes.toml":            true,
+	"valid/string/raw-multiline.toml":               true,
 }
 
 // TestTomlTestConformance is the differential conformance gate against the

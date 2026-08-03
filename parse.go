@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // parser is a single-pass scanner over the document bytes. It tracks the current
@@ -25,10 +26,36 @@ func parse(s string) (*Map, error) {
 	s = strings.TrimPrefix(s, "\ufeff")
 	p := &parser{src: s, root: NewMap()}
 	p.cur = p.root
+	// A TOML document must be valid UTF-8; reject any malformed byte sequence
+	// (including CESU-8-style surrogate encodings) before parsing structure.
+	if off, ok := firstInvalidUTF8(s); ok {
+		return nil, p.errAt(off, "invalid UTF-8 in document")
+	}
 	if err := p.parseDocument(); err != nil {
 		return nil, err
 	}
 	return p.root, nil
+}
+
+// firstInvalidUTF8 returns the byte offset of the first invalid UTF-8 sequence in
+// s and whether one exists.
+func firstInvalidUTF8(s string) (int, bool) {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			return i, true
+		}
+		i += size
+	}
+	return 0, false
+}
+
+// isForbiddenCtrl reports whether b is a raw control byte that TOML forbids inside
+// strings and comments: any C0 control other than tab, line feed, or carriage
+// return, plus DEL (U+007F). Callers permit LF and CR only where the grammar does
+// (multi-line string bodies and CRLF line endings) and reject them otherwise.
+func isForbiddenCtrl(b byte) bool {
+	return (b < 0x20 && b != '\t' && b != '\n' && b != '\r') || b == 0x7f
 }
 
 // errAt builds a ParseError carrying the 1-based line/col of byte off.
@@ -79,9 +106,9 @@ func (p *parser) skipComment() error {
 	}
 	for p.pos < len(p.src) && p.src[p.pos] != '\n' {
 		c := p.src[p.pos]
-		// Tab and a CRLF's carriage return are the only control bytes allowed in a
-		// comment; any other (NUL, DEL, etc.) is rejected.
-		if c != '\t' && c != '\r' && c < 0x20 || c == 0x7f {
+		// A carriage return is allowed only as the CR of a CRLF line ending; a bare
+		// CR, DEL, or any other C0 control (except tab) is rejected.
+		if c == '\r' && p.at(1) != '\n' || isForbiddenCtrl(c) {
 			return p.errAt(p.pos, "control character in comment")
 		}
 		p.pos++
@@ -939,6 +966,8 @@ func (p *parser) parseBasicString() (string, error) {
 			return b.String(), nil
 		case c == '\n':
 			return "", p.errAt(p.pos, "newline in basic string")
+		case c == '\r' || isForbiddenCtrl(c):
+			return "", p.errAt(p.pos, "control character in basic string")
 		case c == '\\':
 			r, err := p.parseEscape(false)
 			if err != nil {
@@ -968,6 +997,9 @@ func (p *parser) parseLiteralString() (string, error) {
 		}
 		if c == '\n' {
 			return "", p.errAt(p.pos, "newline in literal string")
+		}
+		if c == '\r' || isForbiddenCtrl(c) {
+			return "", p.errAt(p.pos, "control character in literal string")
 		}
 		p.pos++
 	}
@@ -1013,6 +1045,8 @@ func (p *parser) parseMultilineBasicString() (string, error) {
 		case c == '\r' && p.at(1) == '\n':
 			b.WriteString("\r\n")
 			p.pos += 2
+		case c == '\r' || isForbiddenCtrl(c):
+			return "", p.errAt(p.pos, "control character in multiline string")
 		default:
 			b.WriteByte(c)
 			p.pos++
@@ -1033,6 +1067,9 @@ func (p *parser) parseMultilineLiteralString() (string, error) {
 			s := p.src[start:p.pos]
 			p.pos += 3
 			return s, nil
+		}
+		if c := p.src[p.pos]; c == '\r' && p.at(1) != '\n' || isForbiddenCtrl(c) {
+			return "", p.errAt(p.pos, "control character in multiline literal string")
 		}
 		p.pos++
 	}
