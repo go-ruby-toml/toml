@@ -829,7 +829,10 @@ func parseDateLeading(tok string) (Value, error) {
 	}
 	rest := tok[11:]
 	// Find an offset suffix: trailing Z/z or a ±hh:mm starting after the seconds.
-	timePart, off, hasOff := splitOffset(rest)
+	timePart, off, hasOff, err := splitOffset(rest)
+	if err != nil {
+		return nil, err
+	}
 	h, mi, s, ns, err := splitClock(timePart)
 	if err != nil {
 		return nil, err
@@ -846,15 +849,16 @@ func parseDateLeading(tok string) (Value, error) {
 }
 
 // splitOffset separates an RFC 3339 time-of-day from its optional zone suffix,
-// returning the bare clock string, the *time.Location for the zone, and whether
-// an offset was present.
-func splitOffset(rest string) (string, *time.Location, bool) {
+// returning the bare clock string, the *time.Location for the zone, whether an
+// offset was present, and an error if the offset's hour or minute is out of the
+// RFC 3339 range (hour 00-23, minute 00-59).
+func splitOffset(rest string) (string, *time.Location, bool, error) {
 	if rest == "" {
-		return rest, nil, false
+		return rest, nil, false, nil
 	}
 	last := rest[len(rest)-1]
 	if last == 'Z' || last == 'z' {
-		return rest[:len(rest)-1], time.UTC, true
+		return rest[:len(rest)-1], time.UTC, true, nil
 	}
 	// Look for ±hh:mm at the tail (a sign preceded by digits, 6 chars).
 	if len(rest) >= 6 {
@@ -863,14 +867,17 @@ func splitOffset(rest string) (string, *time.Location, bool) {
 			isDigit(cand[1]) && isDigit(cand[2]) && isDigit(cand[4]) && isDigit(cand[5]) {
 			oh := int(cand[1]-'0')*10 + int(cand[2]-'0')
 			om := int(cand[4]-'0')*10 + int(cand[5]-'0')
+			if oh > 23 || om > 59 {
+				return "", nil, false, errInvalid("datetime offset")
+			}
 			secs := (oh*60 + om) * 60
 			if cand[0] == '-' {
 				secs = -secs
 			}
-			return rest[:len(rest)-6], time.FixedZone("", secs), true
+			return rest[:len(rest)-6], time.FixedZone("", secs), true, nil
 		}
 	}
-	return rest, nil, false
+	return rest, nil, false, nil
 }
 
 // splitDate decodes a YYYY-MM-DD string, range-checking month and day. The caller
@@ -882,10 +889,26 @@ func splitDate(s string) (y, mo, d int, err error) {
 	y = atoi(s[0:4])
 	mo = atoi(s[5:7])
 	d = atoi(s[8:10])
-	if mo < 1 || mo > 12 || d < 1 || d > 31 {
+	if mo < 1 || mo > 12 || d < 1 || d > daysInMonth(y, mo) {
 		return 0, 0, 0, errInvalid("date")
 	}
 	return y, mo, d, nil
+}
+
+// daysInMonth returns the number of days in month mo (1-12) of year y, honouring
+// the Gregorian leap-year rule for February.
+func daysInMonth(y, mo int) int {
+	switch mo {
+	case 1, 3, 5, 7, 8, 10, 12:
+		return 31
+	case 4, 6, 9, 11:
+		return 30
+	default: // February
+		if y%4 == 0 && (y%100 != 0 || y%400 == 0) {
+			return 29
+		}
+		return 28
+	}
 }
 
 // splitClock decodes HH:MM:SS with an optional fractional-second part, returning
