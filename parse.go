@@ -18,13 +18,31 @@ type parser struct {
 	pos  int // 0-based byte offset
 	root *Map
 	cur  *Map // table that bare keys assign into
+	// aot records, per containing table, the keys whose value is an
+	// array-of-tables created by a `[[key]]` header (as opposed to a static array
+	// value assigned with `key = [...]`). Only an array-of-tables may be extended
+	// by a later `[[key]]` append or descended into by a `[key.sub]` header.
+	aot map[*Map]map[string]bool
+}
+
+// markAOT records that key k of table m holds a `[[…]]` array-of-tables.
+func (p *parser) markAOT(m *Map, k string) {
+	if p.aot[m] == nil {
+		p.aot[m] = map[string]bool{}
+	}
+	p.aot[m][k] = true
+}
+
+// isAOT reports whether key k of table m holds a `[[…]]` array-of-tables.
+func (p *parser) isAOT(m *Map, k string) bool {
+	return p.aot[m] != nil && p.aot[m][k]
 }
 
 // parse is the package entry point behind Parse / LoadFile.
 func parse(s string) (*Map, error) {
 	// Strip a UTF-8 BOM if present (TOML files may carry one).
 	s = strings.TrimPrefix(s, "\ufeff")
-	p := &parser{src: s, root: NewMap()}
+	p := &parser{src: s, root: NewMap(), aot: map[*Map]map[string]bool{}}
 	p.cur = p.root
 	// A TOML document must be valid UTF-8; reject any malformed byte sequence
 	// (including CESU-8-style surrogate encodings) before parsing structure.
@@ -236,27 +254,26 @@ func (p *parser) openTable(keys []string) error {
 		}
 		switch ev := existing.(type) {
 		case *Map:
+			// An inline table is frozen and can never be reopened or extended.
+			if ev.inline {
+				return &OverwriteError{Key: k}
+			}
 			if last {
-				// Re-opening an already-explicit, inline, or dotted-born table is an error.
-				if ev.explicit || ev.inline || ev.fromDotted {
+				// Re-opening an already-explicit or dotted-born table is an error.
+				if ev.explicit || ev.fromDotted {
 					return &OverwriteError{Key: k}
 				}
 				ev.explicit = true
 			}
 			m = ev
 		case []any:
-			// Descend into the last element of an array-of-tables.
-			if len(ev) == 0 {
+			// A `[key.sub]` header descends into the last element of key only when
+			// key is a `[[…]]` array-of-tables (whose elements are always tables) and
+			// never as the final path component.
+			if last || len(ev) == 0 || !p.isAOT(m, k) {
 				return &OverwriteError{Key: k}
 			}
-			tbl, ok := ev[len(ev)-1].(*Map)
-			if !ok {
-				return &OverwriteError{Key: k}
-			}
-			if last {
-				return &OverwriteError{Key: k}
-			}
-			m = tbl
+			m = ev[len(ev)-1].(*Map)
 		default:
 			return &OverwriteError{Key: k}
 		}
@@ -278,7 +295,7 @@ func (p *parser) openArrayTable(keys []string) error {
 			m = child
 			continue
 		}
-		next, err := descendInto(existing, k)
+		next, err := descendInto(existing, k, p.isAOT(m, k))
 		if err != nil {
 			return err
 		}
@@ -291,11 +308,14 @@ func (p *parser) openArrayTable(keys []string) error {
 		elem := NewMap()
 		elem.explicit = true
 		m.Set(k, []any{elem})
+		p.markAOT(m, k)
 		p.cur = elem
 		return nil
 	}
+	// A later `[[key]]` may append only to an existing array-of-tables, never to a
+	// static array value.
 	arr, ok := existing.([]any)
-	if !ok {
+	if !ok || !p.isAOT(m, k) {
 		return &OverwriteError{Key: k}
 	}
 	elem := NewMap()
@@ -306,9 +326,10 @@ func (p *parser) openArrayTable(keys []string) error {
 }
 
 // descendInto returns the table a header path steps into for an existing value:
-// a plain (non-inline) table directly, or the last element of an array-of-tables.
-// Any other shape (scalar, inline table, array of non-tables) is a redefinition.
-func descendInto(existing Value, k string) (*Map, error) {
+// a plain (non-inline) table directly, or the last element of an array-of-tables
+// (only when isAOT reports key holds a `[[…]]` array, not a static one). Any other
+// shape (scalar, inline table, static array) is a redefinition.
+func descendInto(existing Value, k string, isAOT bool) (*Map, error) {
 	switch ev := existing.(type) {
 	case *Map:
 		if ev.inline {
@@ -316,14 +337,11 @@ func descendInto(existing Value, k string) (*Map, error) {
 		}
 		return ev, nil
 	case []any:
-		if len(ev) == 0 {
+		// An array-of-tables always holds tables, so the last element is a *Map.
+		if !isAOT || len(ev) == 0 {
 			return nil, &OverwriteError{Key: k}
 		}
-		tbl, ok := ev[len(ev)-1].(*Map)
-		if !ok {
-			return nil, &OverwriteError{Key: k}
-		}
-		return tbl, nil
+		return ev[len(ev)-1].(*Map), nil
 	default:
 		return nil, &OverwriteError{Key: k}
 	}
@@ -367,8 +385,10 @@ func (p *parser) assign(dst *Map, keys []string, val Value) error {
 			return &OverwriteError{Key: k}
 		}
 		// A dotted key may only extend a table it (or a sibling dotted key) created,
-		// never one frozen by inline `{ … }` syntax.
-		if tbl.inline {
+		// never one frozen by inline `{ … }` syntax nor one already defined by its
+		// own explicit `[table]` header (adding to `[a.b.c]` via `a` + `b.c.x` is
+		// forbidden by TOML v1.0.0).
+		if tbl.inline || tbl.explicit {
 			return &OverwriteError{Key: k}
 		}
 		m = tbl
