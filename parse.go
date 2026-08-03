@@ -1064,8 +1064,20 @@ func (p *parser) parseMultilineLiteralString() (string, error) {
 			return "", p.errAt(p.pos, "unterminated multiline literal string")
 		}
 		if p.peek() == '\'' && p.at(1) == '\'' && p.at(2) == '\'' {
-			s := p.src[start:p.pos]
-			p.pos += 3
+			// The closing delimiter is the final `'''` of the run; up to two quotes
+			// immediately before it are literal content, so `''''one quote''''`
+			// yields `'one quote'` and `'''''two quotes'''''` yields `''two quotes''`.
+			// A run of six or more (three-plus content quotes) cannot appear
+			// unescaped, so it is rejected per TOML v1.0.0.
+			run := 0
+			for p.at(run) == '\'' {
+				run++
+			}
+			if run > 5 {
+				return "", p.errAt(p.pos, "too many quotes in multiline literal string")
+			}
+			s := p.src[start:p.pos] + strings.Repeat("'", run-3)
+			p.pos += run
 			return s, nil
 		}
 		if c := p.src[p.pos]; c == '\r' && p.at(1) != '\n' || isForbiddenCtrl(c) {
