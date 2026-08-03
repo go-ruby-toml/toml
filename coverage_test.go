@@ -52,21 +52,23 @@ func TestParseErrorsSyntax(t *testing.T) {
 
 func TestParseErrorsNumbers(t *testing.T) {
 	srcs := []string{
-		"a = 01",   // decimal leading zero
-		"a = 1__2", // double underscore
-		"a = _1",   // leading underscore
-		"a = 1_",   // trailing underscore
-		"a = 0x",   // empty hex
-		"a = 0xG",  // bad hex digit
-		"a = .7",   // float no leading digit
-		"a = 7.",   // float no trailing digit
-		"a = 1._5", // underscore next to dot
-		"a = 07.5", // float leading zero
-		"a = 1e",   // exponent no digits
-		"a = 0b",   // empty binary
-		"a = 0o",   // empty octal
-		"a = 0x1_", // hex trailing underscore
-		"a = 1_.5", // underscore before dot
+		"a = 01",                   // decimal leading zero
+		"a = 1__2",                 // double underscore
+		"a = _1",                   // leading underscore
+		"a = 1_",                   // trailing underscore
+		"a = 0x",                   // empty hex
+		"a = 0xG",                  // bad hex digit
+		"a = .7",                   // float no leading digit
+		"a = 7.",                   // float no trailing digit
+		"a = 1._5",                 // underscore next to dot
+		"a = 07.5",                 // float leading zero
+		"a = 1e",                   // exponent no digits
+		"a = 0b",                   // empty binary
+		"a = 0o",                   // empty octal
+		"a = 0x1_",                 // hex trailing underscore
+		"a = 1_.5",                 // underscore before dot
+		"a = 9223372036854775808",  // int64 overflow (max + 1)
+		"a = -9223372036854775809", // int64 underflow (min - 1)
 	}
 	for _, s := range srcs {
 		assertErr(t, s)

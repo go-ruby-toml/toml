@@ -41,26 +41,17 @@ var tomlScalarTypes = map[string]bool{
 // expectation byte/semantics-exact, an invalid case must be rejected — so no
 // change may introduce a new divergence, and a listed case that starts passing is
 // reported so the entry can be removed. Baseline captured 2026-08-03 against TOML
-// v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps. Closing the
-// control-character/invalid-UTF-8 lexing gap (26), the multi-line literal
-// trailing-quote gap (3), the calendar/offset validation gap (8), and the
-// table/array redefinition gap (6) takes the suite to 701/709 (98.87%).
+// v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps.
 //
-// The remaining 6 shrinkable gaps break down as (all genuine parser behaviour):
-//   - Numeric/float lexing (5): double sign, a bad hex digit and `exp-dot`
-//     malformations are accepted (invalid/integer/*, invalid/float/exp-dot-0{2,3}).
-//   - Valid input wrongly rejected (1): int64 min/max boundary literals
-//     (valid/integer/long).
-//
-// Each is a dedicated gap-closing target; the set may only shrink.
-var tomlTestKnownFailing = map[string]bool{
-	"invalid/float/exp-dot-02.toml":         true,
-	"invalid/float/exp-dot-03.toml":         true,
-	"invalid/integer/double-sign-nex.toml":  true,
-	"invalid/integer/double-sign-plus.toml": true,
-	"invalid/integer/invalid-hex-03.toml":   true,
-	"valid/integer/long.toml":               true,
-}
+// The set is now EMPTY: every shrinkable gap is closed, taking the suite to
+// 707/709 (99.72%) — all 210 valid cases parse and match, and every invalid case
+// is rejected except the two intentional toml-rb divergences in
+// tomlKnownDivergences. The gaps closed, in order, were the control-character/
+// invalid-UTF-8 lexing gap (26), the multi-line literal trailing-quote gap (3),
+// the calendar/offset validation gap (8), the table/array redefinition gap (6),
+// and the numeric lexing + int64-boundary gap (6 = 5 invalid + valid/integer/
+// long). Any future regression re-populates this map and fails CI.
+var tomlTestKnownFailing = map[string]bool{}
 
 // tomlKnownDivergences records the toml-test cases this package intentionally
 // does NOT resolve to toml-test's strict TOML v1.0.0 verdict because it follows

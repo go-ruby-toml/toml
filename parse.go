@@ -660,7 +660,7 @@ func isFloatToken(tok string) bool {
 // parseIntToken decodes a decimal/hex/octal/binary integer with `_` separators.
 func parseIntToken(tok string) (Value, error) {
 	base := 10
-	neg := false
+	sign := ""
 	body := tok
 	switch {
 	case strings.HasPrefix(body, "0x"):
@@ -673,8 +673,7 @@ func parseIntToken(tok string) (Value, error) {
 		if strings.HasPrefix(body, "+") {
 			body = body[1:]
 		} else if strings.HasPrefix(body, "-") {
-			neg = true
-			body = body[1:]
+			sign, body = "-", body[1:]
 		}
 	}
 	digits, err := stripUnderscores(body, base)
@@ -686,12 +685,11 @@ func parseIntToken(tok string) (Value, error) {
 			return nil, err
 		}
 	}
-	n, err := strconv.ParseInt(digits, base, 64)
+	// Parse the sign together with the magnitude so INT64_MIN
+	// (-9223372036854775808), whose magnitude overflows int64, decodes exactly.
+	n, err := strconv.ParseInt(sign+digits, base, 64)
 	if err != nil {
 		return nil, errInvalid("integer")
-	}
-	if neg {
-		n = -n
 	}
 	return n, nil
 }
@@ -720,6 +718,11 @@ func stripUnderscores(s string, base int) (string, error) {
 				return "", errInvalid("number")
 			}
 			continue
+		}
+		// Every non-separator byte must be a valid digit for the base; this rejects
+		// a stray sign left after prefix/sign stripping (`--99`, `++99`, `0x-1`).
+		if !isBaseDigit(c, base) {
+			return "", errInvalid("number")
 		}
 		b.WriteByte(c)
 	}
@@ -752,6 +755,12 @@ func parseFloatToken(tok string) (Value, error) {
 	if body == "" || !isDigit(body[0]) || !isDigit(body[len(body)-1]) {
 		// Exponent-terminated floats like `1e10` end in a digit already; the only
 		// trailing-non-digit cases are the forbidden `7.` form.
+		return nil, errInvalid("float")
+	}
+	// A decimal point must sit between two digits, so `1.e2` and `3.e+20` (a `.`
+	// followed by the exponent) are rejected even though the token ends in a digit.
+	if i := strings.IndexByte(body, '.'); i >= 0 &&
+		(i == 0 || i == len(body)-1 || !isDigit(body[i-1]) || !isDigit(body[i+1])) {
 		return nil, errInvalid("float")
 	}
 	// Validate underscore placement across the mantissa+exponent, then strip them.
