@@ -102,8 +102,8 @@ func TestParseErrorsStrings(t *testing.T) {
 		`a = "\u00"`,          // short unicode escape
 		`a = "\uZZZZ"`,        // bad unicode hex
 		`a = "\uD800"`,        // surrogate scalar
-		`a = "\x"`,            // short hex escape
-		`a = "\xZZ"`,          // bad hex escape
+		`a = "\x"`,            // \x is a reserved escape (toml-rb + v1.0.0)
+		`a = "\xZZ"`,          // reserved escape, hex payload irrelevant
 		"a = \"line\nbreak\"", // newline in basic string
 		"a = 'line\nbreak'",   // newline in literal string
 	}

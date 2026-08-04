@@ -1201,16 +1201,16 @@ func (p *parser) parseEscape(multiline bool) (string, error) {
 	case 'f':
 		p.pos += 2
 		return "\f", nil
-	case 'e': // toml-rb supports \e (ESC)
-		p.pos += 2
-		return "\x1b", nil
 	case 'u':
 		return p.parseUnicodeEscape(4)
 	case 'U':
 		return p.parseUnicodeEscape(8)
-	case 'x': // toml-rb / TOML 1.1 hex byte escape
-		return p.parseHexEscape()
 	default:
+		// toml-rb's BasicString.transform_escaped_chars only maps
+		// \0 \t \b \f \n \r \" \\ (plus \u/\U); every other escape —
+		// including \x byte escapes and \e — raises "Escape sequence
+		// reserved", so this package rejects them too, matching both
+		// toml-rb and strict TOML v1.0.0.
 		return "", p.errAt(p.pos, "invalid escape \\"+string(e))
 	}
 }
@@ -1232,22 +1232,6 @@ func (p *parser) parseUnicodeEscape(n int) (string, error) {
 	}
 	p.pos += n
 	return string(rune(cp)), nil
-}
-
-// parseHexEscape decodes \xHH into a single byte (toml-rb extension).
-func (p *parser) parseHexEscape() (string, error) {
-	start := p.pos
-	p.pos += 2 // skip \x
-	if p.pos+2 > len(p.src) {
-		return "", p.errAt(start, "short hex escape")
-	}
-	hex := p.src[p.pos : p.pos+2]
-	b, err := strconv.ParseUint(hex, 16, 8)
-	if err != nil {
-		return "", p.errAt(start, "invalid hex escape")
-	}
-	p.pos += 2
-	return string(rune(b)), nil
 }
 
 // ---- helpers ----
