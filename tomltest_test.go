@@ -44,34 +44,41 @@ var tomlScalarTypes = map[string]bool{
 // v1.0.0 (files-toml-1.0.0): 658/709 cases pass (92.81%), 51 gaps.
 //
 // The set is now EMPTY: every shrinkable gap is closed, taking the suite to
-// 707/709 (99.72%) — all 210 valid cases parse and match, and every invalid case
-// is rejected except the two intentional toml-rb divergences in
+// 708/709 (99.86%) — all 210 valid cases parse and match, and every invalid case
+// is rejected except the one intentional toml-rb divergence in
 // tomlKnownDivergences. The gaps closed, in order, were the control-character/
 // invalid-UTF-8 lexing gap (26), the multi-line literal trailing-quote gap (3),
 // the calendar/offset validation gap (8), the table/array redefinition gap (6),
-// and the numeric lexing + int64-boundary gap (6 = 5 invalid + valid/integer/
-// long). Any future regression re-populates this map and fails CI.
+// the numeric lexing + int64-boundary gap (6 = 5 invalid + valid/integer/long),
+// and finally the reserved-escape gap (1: invalid/string/basic-byte-escapes —
+// the \x byte escape, previously mis-accepted as a toml-rb extension, is in fact
+// rejected by toml-rb since \x is absent from its BasicString SPECIAL_CHARS map).
+// Any future regression re-populates this map and fails CI.
 var tomlTestKnownFailing = map[string]bool{}
 
 // tomlKnownDivergences records the toml-test cases this package intentionally
 // does NOT resolve to toml-test's strict TOML v1.0.0 verdict because it follows
-// toml-rb (the reference this go-ruby- port mirrors) instead. They are permanent,
-// documented exceptions — excluded from the ratchet in both directions — not gaps
+// toml-rb (the reference this go-ruby- port mirrors) instead. It is a permanent,
+// documented exception — excluded from the ratchet in both directions — not a gap
 // to close:
 //
-//   - invalid/string/basic-byte-escapes: toml-rb accepts the `\xHH` byte escape
-//     (and `\e`) as an extension; TestStringEscapes pins that behaviour, so `\x33`
-//     is accepted where strict v1.0.0 rejects it.
-//   - invalid/string/multiline-quotes-01: for basic multi-line strings toml-rb
-//     consumes an arbitrarily long run of quotes adjacent to the delimiter as
-//     literal content (the run's final three are the delimiter), so a six-quote
-//     run yields three literal quotes rather than an error; TestMultilineBasic
-//     ("nine quotes") pins this. The multi-line LITERAL parser has no such pin and
-//     does apply the strict v1.0.0 rule (a run of six or more is rejected), so the
-//     literal analogues invalid/string/literal-multiline-quotes-0{1,2} are
-//     correctly rejected and stay outside this map.
+//   - invalid/string/multiline-quotes-01 (`a = """6 quotes: """"""`): for basic
+//     multi-line strings toml-rb's grammar rule matches text up to the first
+//     `"""` NOT followed by another quote (`~('"""' !'"')`), so it consumes the
+//     leading run of quotes as literal content and treats only the final three as
+//     the delimiter — a six-quote run yields three literal quotes (`6 quotes: """`)
+//     rather than an error. TestMultilineBasic ("nine quotes") pins this. The
+//     multi-line LITERAL parser has no such pin and does apply the strict v1.0.0
+//     rule (a run of six or more is rejected), so the literal analogues
+//     invalid/string/literal-multiline-quotes-0{1,2} are correctly rejected and
+//     stay outside this map.
+//
+// The former second entry, invalid/string/basic-byte-escapes, was removed: it was
+// a mislabelled bug, not a divergence. toml-rb's BasicString.transform_escaped_chars
+// maps only \0 \t \b \f \n \r \" \\ (plus \u/\U) and raises "Escape sequence
+// reserved" for anything else, so it rejects the `\x` byte escape exactly as strict
+// v1.0.0 does; the parser now rejects it too, and the case passes normally.
 var tomlKnownDivergences = map[string]bool{
-	"invalid/string/basic-byte-escapes.toml":  true,
 	"invalid/string/multiline-quotes-01.toml": true,
 }
 

@@ -104,10 +104,19 @@ func TestSpecialFloats(t *testing.T) {
 }
 
 func TestStringEscapes(t *testing.T) {
-	m := mustParse(t, `s = "é\t\n\r\"\\\b\f\e\x41\U0001F600"`)
-	want := "é\t\n\r\"\\\b\f\x1bA\U0001F600"
+	m := mustParse(t, `s = "é\t\n\r\"\\\b\f\U0001F600"`)
+	want := "é\t\n\r\"\\\b\f\U0001F600"
 	if v, _ := m.Get("s"); v != want {
 		t.Errorf("escapes = %q, want %q", v, want)
+	}
+	// toml-rb's SPECIAL_CHARS map has no \e or \x entry, so its
+	// transform_escaped_chars raises "Escape sequence reserved" for both;
+	// this package rejects them identically (also matching strict v1.0.0,
+	// which lists neither escape).
+	for _, bad := range []string{`s = "\e"`, `s = "\x41"`, `s = "\xAg"`} {
+		if _, err := Parse(bad); err == nil {
+			t.Errorf("expected rejection of reserved escape in %q", bad)
+		}
 	}
 }
 
